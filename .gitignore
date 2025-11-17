@@ -2,7 +2,7 @@
 **/.terraform/*
 *.tfstate
 *.tfstate.*
-*.tfvars
+*.tfstate.backup
 crash.log
 override.tf
 override.tf.json
@@ -11,8 +11,11 @@ override.tf.json
 .terraformrc
 terraform.rc
 
-# Terraform lock file (optional - some keep it, some ignore it)
-# .terraform.lock.hcl
+# Terraform variables 
+# *.tfvars  
+*.auto.tfvars          
+secrets.tfvars         
+local.tfvars          
 
 # AWS
 .aws/
@@ -25,7 +28,6 @@ terraform.rc
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Logs
 *.log
@@ -40,7 +42,7 @@ kubeconfig
 .env.local
 .env.*.local
 
-# Secrets (if any)
+# Secrets
 secrets/
 *.secret
 
