@@ -7,6 +7,15 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  # Remote state backend
+  backend "s3" {
+    bucket         = "wordpress-capstone-tfstate-1763405943"
+    key            = "wordpress-capstone/dev/terraform.tfstate"
+    region         = "eu-north-1"
+    dynamodb_table = "wordpress-capstone-terraform-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
