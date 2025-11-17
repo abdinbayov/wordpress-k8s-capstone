@@ -61,4 +61,4 @@ temp/
 *.tmp
 
 # Documentation build artifacts
-docs/_build/
+docs/_build/.env

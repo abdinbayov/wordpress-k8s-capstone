@@ -7,7 +7,7 @@ data:
   .my.cnf: |
     [client]
     user=wordpress
-    password=WordPress123!Secure
+    password=MYSQL_PASSWORD_PLACEHOLDER
     host=mysql
     port=3306
 ---

@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 env:
   AWS_REGION: eu-north-1
@@ -40,10 +40,6 @@ jobs:
       working-directory: ./environments/dev
       run: terraform init
 
-    - name: Terraform Plan
-      working-directory: ./environments/dev
-      run: terraform plan
-
     - name: Terraform Apply
       working-directory: ./environments/dev
       run: terraform apply -auto-approve
@@ -55,34 +51,63 @@ jobs:
     - name: Wait for nodes
       run: |
         kubectl wait --for=condition=Ready nodes --all --timeout=600s
+        echo "Nodes ready:"
+        kubectl get nodes
 
     - name: Install EBS CSI Driver
       run: |
         kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.25"
+        echo "Waiting for EBS CSI pods..."
         sleep 30
+        kubectl wait --for=condition=ready pod -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver --timeout=120s || true
 
-    - name: Deploy WordPress
+    # NEW STEP: Inject secrets into Kubernetes manifests
+    - name: Inject secrets into manifests
+      run: |
+        # Replace placeholders in secret.yaml
+        sed -i "s/MYSQL_PASSWORD_PLACEHOLDER/${{ secrets.MYSQL_PASSWORD }}/g" kubernetes/wordpress/02-secret.yaml
+        sed -i "s/MYSQL_ROOT_PASSWORD_PLACEHOLDER/${{ secrets.MYSQL_ROOT_PASSWORD }}/g" kubernetes/wordpress/02-secret.yaml
+        
+        # Replace placeholder in mysql-exporter config
+        sed -i "s/MYSQL_PASSWORD_PLACEHOLDER/${{ secrets.MYSQL_PASSWORD }}/g" kubernetes/monitoring/06-mysql-exporter.yaml
+
+    - name: Deploy WordPress and MySQL
       run: |
         kubectl apply -f kubernetes/wordpress/
+        echo "Waiting for MySQL..."
         kubectl wait --for=condition=available --timeout=600s deployment/mysql -n wordpress
+        echo "Waiting for WordPress..."
         kubectl wait --for=condition=available --timeout=600s deployment/wordpress -n wordpress
 
     - name: Deploy Monitoring
       run: |
         kubectl apply -f kubernetes/monitoring/
-        kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n monitoring
+        echo "Waiting for Prometheus..."
+        kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n monitoring || true
+        echo "Waiting for MySQL exporter..."
+        kubectl wait --for=condition=available --timeout=180s deployment/mysql-exporter -n wordpress || true
 
     - name: Get Service URLs
       run: |
         echo "Waiting for LoadBalancers..."
         sleep 60
+        
         echo "WordPress URL:"
-        kubectl get svc -n wordpress wordpress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+        WORDPRESS_URL=$(kubectl get svc -n wordpress wordpress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Pending...")
+        echo "http://$WORDPRESS_URL"
+        
         echo ""
         echo "Prometheus URL:"
-        kubectl get svc -n monitoring prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+        PROMETHEUS_URL=$(kubectl get svc -n monitoring prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || echo "Pending...")
+        echo "http://$PROMETHEUS_URL:9090"
 
-    - name: Run Health Checks
+    - name: Verify Deployment
       run: |
+        echo "=== WordPress Pods ==="
         kubectl get pods -n wordpress
+        echo ""
+        echo "=== Monitoring Pods ==="
         kubectl get pods -n monitoring
+        echo ""
+        echo "=== Nodes ==="
+        kubectl get nodes

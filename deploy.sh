@@ -11,6 +11,19 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+# Check if passwords are set (for CI/CD) or prompt user
+if [ -z "$MYSQL_PASSWORD" ]; then
+    echo -e "${YELLOW}MySQL passwords not set in environment.${NC}"
+    echo "Enter MySQL password for WordPress (or press Enter for default):"
+    read -s MYSQL_PASSWORD
+    MYSQL_PASSWORD=${MYSQL_PASSWORD:-WordPress123!Secure}
+    
+    echo "Enter MySQL root password (or press Enter for default):"
+    read -s MYSQL_ROOT_PASSWORD
+    MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-RootPassword123!Secure}
+    echo ""
+fi
+
 # Step 1: Deploy Infrastructure
 echo -e "${BLUE}Step 1/6: Creating AWS infrastructure (VPC, EKS, Nodes)${NC}"
 cd environments/dev
@@ -42,9 +55,20 @@ kubectl wait --for=condition=ready pod -n kube-system -l app.kubernetes.io/name=
 echo -e "${GREEN}EBS CSI Driver installed${NC}"
 echo ""
 
-# Step 4: Deploy WordPress
-echo -e "${BLUE}Step 4/6: Deploying WordPress and MySQL${NC}"
-kubectl apply -f kubernetes/wordpress/
+# Step 4: Inject secrets into manifests
+echo -e "${BLUE}Step 4/6: Preparing Kubernetes manifests with secrets${NC}"
+# Create temporary directory
+mkdir -p /tmp/k8s-deploy
+cp -r kubernetes/* /tmp/k8s-deploy/
+
+# Replace placeholders
+sed -i.bak "s/MYSQL_PASSWORD_PLACEHOLDER/${MYSQL_PASSWORD}/g" /tmp/k8s-deploy/wordpress/02-secret.yaml
+sed -i.bak "s/MYSQL_ROOT_PASSWORD_PLACEHOLDER/${MYSQL_ROOT_PASSWORD}/g" /tmp/k8s-deploy/wordpress/02-secret.yaml
+sed -i.bak "s/MYSQL_PASSWORD_PLACEHOLDER/${MYSQL_PASSWORD}/g" /tmp/k8s-deploy/monitoring/06-mysql-exporter.yaml
+
+# Deploy WordPress
+echo -e "${BLUE}Step 5/6: Deploying WordPress and MySQL${NC}"
+kubectl apply -f /tmp/k8s-deploy/wordpress/
 echo "Waiting for MySQL to be ready..."
 kubectl wait --for=condition=available --timeout=600s deployment/mysql -n wordpress
 echo "Waiting for WordPress to be ready..."
@@ -53,14 +77,17 @@ echo -e "${GREEN}WordPress deployed${NC}"
 echo ""
 
 # Step 5: Deploy Monitoring
-echo -e "${BLUE}Step 5/6: Deploying Prometheus monitoring${NC}"
-kubectl apply -f kubernetes/monitoring/
+echo -e "${BLUE}Step 5.5/6: Deploying Prometheus monitoring${NC}"
+kubectl apply -f /tmp/k8s-deploy/monitoring/
 echo "Waiting for Prometheus to be ready..."
 kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n monitoring 2>/dev/null || echo "Prometheus starting..."
 echo "Waiting for MySQL exporter to be ready..."
 kubectl wait --for=condition=available --timeout=180s deployment/mysql-exporter -n wordpress 2>/dev/null || echo "MySQL exporter starting..."
 echo -e "${GREEN}Monitoring deployed${NC}"
 echo ""
+
+# Cleanup temporary files
+rm -rf /tmp/k8s-deploy
 
 # Step 6: Get URLs
 echo -e "${BLUE}Step 6/6: Retrieving service URLs${NC}"
