@@ -1,0 +1,62 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Terraform lock file (optional - some keep it, some ignore it)
+# .terraform.lock.hcl
+
+# AWS
+.aws/
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Secrets (if any)
+secrets/
+*.secret
+
+# Backup files
+*.backup
+*.bak
+
+# Mac
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Documentation build artifacts
+docs/_build/

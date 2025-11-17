@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-exporter-config
+  namespace: wordpress
+data:
+  .my.cnf: |
+    [client]
+    user=wordpress
+    password=WordPress123!Secure
+    host=mysql
+    port=3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-exporter
+  namespace: wordpress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql-exporter
+  template:
+    metadata:
+      labels:
+        app: mysql-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9104"
+    spec:
+      containers:
+      - name: mysql-exporter
+        image: prom/mysqld-exporter:v0.15.1
+        args:
+          - "--config.my-cnf=/etc/mysql-exporter/.my.cnf"
+        ports:
+        - containerPort: 9104
+          name: metrics
+        volumeMounts:
+        - name: mysql-config
+          mountPath: /etc/mysql-exporter
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+      volumes:
+      - name: mysql-config
+        configMap:
+          name: mysql-exporter-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-exporter
+  namespace: wordpress
+spec:
+  ports:
+  - port: 9104
+    targetPort: 9104
+    name: metrics
+  selector:
+    app: mysql-exporter

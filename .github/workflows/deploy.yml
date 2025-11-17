@@ -1,0 +1,88 @@
+name: Deploy WordPress to EKS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: eu-north-1
+  CLUSTER_NAME: wordpress-capstone-dev
+
+jobs:
+  deploy:
+    name: Deploy Infrastructure and Applications
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Terraform Init
+      working-directory: ./environments/dev
+      run: terraform init
+
+    - name: Terraform Plan
+      working-directory: ./environments/dev
+      run: terraform plan
+
+    - name: Terraform Apply
+      working-directory: ./environments/dev
+      run: terraform apply -auto-approve
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }}
+
+    - name: Wait for nodes
+      run: |
+        kubectl wait --for=condition=Ready nodes --all --timeout=600s
+
+    - name: Install EBS CSI Driver
+      run: |
+        kubectl apply -k "github.com/kubernetes-sigs/aws-ebs-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.25"
+        sleep 30
+
+    - name: Deploy WordPress
+      run: |
+        kubectl apply -f kubernetes/wordpress/
+        kubectl wait --for=condition=available --timeout=600s deployment/mysql -n wordpress
+        kubectl wait --for=condition=available --timeout=600s deployment/wordpress -n wordpress
+
+    - name: Deploy Monitoring
+      run: |
+        kubectl apply -f kubernetes/monitoring/
+        kubectl wait --for=condition=available --timeout=300s deployment/prometheus -n monitoring
+
+    - name: Get Service URLs
+      run: |
+        echo "Waiting for LoadBalancers..."
+        sleep 60
+        echo "WordPress URL:"
+        kubectl get svc -n wordpress wordpress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+        echo ""
+        echo "Prometheus URL:"
+        kubectl get svc -n monitoring prometheus -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+
+    - name: Run Health Checks
+      run: |
+        kubectl get pods -n wordpress
+        kubectl get pods -n monitoring

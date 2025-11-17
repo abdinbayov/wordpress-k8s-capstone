@@ -1,0 +1,52 @@
+name: Destroy WordPress EKS Infrastructure
+
+on:
+  workflow_dispatch:  # Manual trigger only
+
+env:
+  AWS_REGION: eu-north-1
+  CLUSTER_NAME: wordpress-capstone-dev
+
+jobs:
+  destroy:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Configure kubectl
+      run: |
+        aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.CLUSTER_NAME }} || true
+
+    - name: Delete Kubernetes resources
+      run: |
+        kubectl delete namespace wordpress --ignore-not-found=true --timeout=120s || true
+        kubectl delete namespace monitoring --ignore-not-found=true --timeout=120s || true
+        sleep 120
+
+    - name: Terraform Init
+      working-directory: ./environments/dev
+      run: terraform init
+
+    - name: Terraform Destroy
+      working-directory: ./environments/dev
+      run: terraform destroy -auto-approve
